@@ -10,7 +10,14 @@ dotenv.config({
 
 const app = express();
 
-connectDB();
+connectDB()
+.then (() => {
+  app.listen(process.env.PORT || 8000);
+    console.log(`Server is running at port: ${process.env. PORT}`)
+})
+.catch((err) => {
+  console.log("MongoDB connection failed!")
+})
 
 /*
 
@@ -32,20 +39,3 @@ connectDB();
 })();
 
 */
-
-app.get("/", (req, res) => {
-  try {
-    const Product = {
-      name: "Cheese Cake",
-      price: 10.99,
-      quantity: 15,
-    };
-    res.status(200).json(Product);
-  } catch (error) {
-    res.status(500).json({ Message: error.message });
-  }
-});
-
-app.listen(3000, () => {
-  console.log("Server is running...");
-});
