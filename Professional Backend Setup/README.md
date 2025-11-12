@@ -30,6 +30,57 @@ Recent changes (code updates)
   - `ApiError.js` — custom error class for throwing structured errors
   - `asyncHandler.js` — async wrapper for route handlers (centralizes try/catch)
 
+Authentication & Model layer updates
+
+- `User` model (`src/models/user.models.js`) with fields: `username`, `email`, `fullName`, `avatar`, `coverImage`, `watchHistory` (ref: `Video`), `password`, `refreshToken`.
+- Pre‑save password hashing using **bcrypt** (secure one‑way hashing before persistence).
+- Instance method `isPasswordCorrect(password)` for credential verification.
+- JWT helpers on the model to generate:
+  - Access Token (includes `_id`, `email`, `username`, `fullName`).
+  - Refresh Token (includes `_id` only) for session renewal.
+- Environment‑driven token secrets & expiries improve security and make rotation easy.
+- Indexes on frequently queried fields (`username`, `fullName`) for more efficient lookups.
+
+Required auth environment variables (add these to your `.env`):
+
+```dotenv
+ACCESS_TOKEN_SECRET=change_me_access_secret
+ACCESS_TOKEN_EXPIRY=15m
+REFRESH_TOKEN_SECRET=change_me_refresh_secret
+REFRESH_TOKEN_EXPIRY=7d
+MONGODB_URI=your_mongo_connection_string
+PORT=8000
+CORS_ORIGIN=http://localhost:5173
+```
+
+Example login flow (simplified):
+
+```js
+import { User } from "../models/user.models.js";
+
+async function loginController(req, res) {
+  const { email, password } = req.body;
+  const user = await User.findOne({ email });
+  if (!user || !(await user.isPasswordCorrect(password))) {
+    return res.status(401).json({ message: "Invalid credentials" });
+  }
+
+  const accessToken = user.generateAccessToken();
+  const refreshToken = user.generateRefreshToken();
+  user.refreshToken = refreshToken;
+  await user.save({ validateBeforeSave: false });
+
+  res
+    .cookie("refreshToken", refreshToken, {
+      httpOnly: true,
+      secure: true,
+      sameSite: "strict",
+      path: "/",
+    })
+    .json({ accessToken });
+}
+```
+
 How to run (quick)
 
 1. Install dependencies:
@@ -53,7 +104,8 @@ Notes
 
 - This project is focused on learning best practices for backend setup and secure database connectivity. Before using any credentials in a public repository, rotate secrets and remove them from history.
 - The recent changes added middleware and utility helpers to make request handling, errors, and responses more consistent across the app.
-- I will further:
-  - add example usage of `ApiResponse`/`ApiError` in controllers,
-  - add a health-check endpoint, or
-  - provide a short checklist for production-hardening (indexes, monitoring, backups, rate limiting).
+- Further improvements planned:
+  - incorporate `ApiResponse`/`ApiError` consistently in controllers
+  - add health-check and metrics endpoints
+  - implement refresh token rotation & revocation (blacklist or versioning)
+  - production checklist (indexes, rate limiting, logging correlation IDs, monitoring)
