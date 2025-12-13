@@ -1,111 +1,146 @@
 # Professional Backend Setup
 
-This project contains my practice work for building a backend with a professional structure and production-minded patterns. While working on this project I learned how to set up a maintainable server and how to connect to MongoDB in a reliable, secure way.
+A production-minded Node.js + Express backend built to learn professional project structure, secure MongoDB connectivity, and JWT-based authentication.
 
-Key learnings
+---
 
-- Project structure: separate folders for routes, controllers, models, middlewares and utils to keep code modular and testable.
-- Configuration: use environment variables and `.env` (with `dotenv`) to keep secrets out of source code.
-- Database connection: connect to MongoDB with Mongoose, handle connection errors, and keep configuration (URI, options) in environment variables.
-- Middleware and error handling: use JSON/body parsers, CORS, cookie parsing, static serving and centralized error handlers to make the app robust.
-- Routing and controllers: keep handlers small and focused (controllers) and register routes from a central place (app entry).
-- Deployment considerations: avoid hard-coded credentials, add `.env.example`, and prepare the app to read `PORT` and other runtime settings from env.
+## 📚 What I Learned
 
-Recent changes (code updates)
+| Area                  | Key Takeaways                                                                                        |
+| --------------------- | ---------------------------------------------------------------------------------------------------- |
+| **Project Structure** | Modular folders (`routes/`, `controllers/`, `models/`, `middlewares/`, `utils/`) for maintainability |
+| **Configuration**     | Environment variables via `.env` + `dotenv`; secrets never in source                                 |
+| **Database**          | Mongoose connection with error handling; deferred server start until DB ready                        |
+| **Middleware**        | CORS, body parsing (with limits), cookies, static assets, centralized async error wrapper            |
+| **Authentication**    | bcrypt password hashing, JWT access/refresh tokens, secure cookie handling                           |
+| **Code Quality**      | Consistent API responses (`ApiResponse`), structured errors (`ApiError`), `asyncHandler` wrapper     |
 
-- `src/app.js` — added and configured middleware:
-  - CORS configured with `origin` and `credentials` from env
-  - `express.json()` with a request body size limit
-  - `express.urlencoded()` with a size limit
-  - `express.static("public")` for serving static assets
-  - `cookie-parser()` for cookie handling
+---
 
-- `src/index.js` — improved startup and DB wiring:
-  - using `dotenv` (custom env path `./env`)
-  - invoking `connectDB()` then starting the server only after successful DB connection
-  - basic connection error logging to help startup diagnostics
+## 🗂️ Project Structure
 
-- `src/utils/` — new utility helpers to standardize responses and error handling:
-  - `ApiResponse.js` — small class for consistent API responses
-  - `ApiError.js` — custom error class for throwing structured errors
-  - `asyncHandler.js` — async wrapper for route handlers (centralizes try/catch)
-
-Authentication & Model layer updates
-
-- `User` model (`src/models/user.models.js`) with fields: `username`, `email`, `fullName`, `avatar`, `coverImage`, `watchHistory` (ref: `Video`), `password`, `refreshToken`.
-- Pre‑save password hashing using **bcrypt** (secure one‑way hashing before persistence).
-- Instance method `isPasswordCorrect(password)` for credential verification.
-- JWT helpers on the model to generate:
-  - Access Token (includes `_id`, `email`, `username`, `fullName`).
-  - Refresh Token (includes `_id` only) for session renewal.
-- Environment‑driven token secrets & expiries improve security and make rotation easy.
-- Indexes on frequently queried fields (`username`, `fullName`) for more efficient lookups.
-
-Required auth environment variables (add these to your `.env`):
-
-```dotenv
-ACCESS_TOKEN_SECRET=change_me_access_secret
-ACCESS_TOKEN_EXPIRY=15m
-REFRESH_TOKEN_SECRET=change_me_refresh_secret
-REFRESH_TOKEN_EXPIRY=7d
-MONGODB_URI=your_mongo_connection_string
-PORT=8000
-CORS_ORIGIN=http://localhost:5173
+```
+src/
+├── app.js              # Express app config & middleware
+├── index.js            # Entry point (DB connect → server start)
+├── constants.js        # App-wide constants
+├── controllers/        # Route handlers
+│   └── user.controllers.js
+├── db/                 # Database connection
+│   └── index.js
+├── middlewares/        # Custom middleware
+│   └── multer.middlewares.js
+├── models/             # Mongoose schemas
+│   ├── user.models.js
+│   └── video.models.js
+├── routes/             # API routes
+│   └── user.routes.js
+└── utils/              # Helper utilities
+    ├── ApiError.js
+    ├── ApiResponse.js
+    ├── asyncHandler.js
+    └── cloudinary.js
 ```
 
-Example login flow (simplified):
+---
+
+## ⚙️ Setup & Run
+
+1. **Install dependencies**
+
+   ```bash
+   npm install
+   ```
+
+2. **Configure environment**  
+   Create a `.env` file (or copy `.env.example`):
+
+   ```dotenv
+   MONGODB_URI=your_mongo_connection_string
+   PORT=8000
+   CORS_ORIGIN=http://localhost:5173
+   ACCESS_TOKEN_SECRET=your_access_secret
+   ACCESS_TOKEN_EXPIRY=15m
+   REFRESH_TOKEN_SECRET=your_refresh_secret
+   REFRESH_TOKEN_EXPIRY=7d
+   ```
+
+3. **Start the server**
+
+   ```bash
+   npm run dev
+   # or
+   node src/index.js
+   ```
+
+4. **Test the API**
+   ```
+   POST http://localhost:8000/api/v1/users/register
+   ```
+
+---
+
+## 🔐 Authentication Flow
+
+### User Model Features
+
+- Fields: `username`, `email`, `fullName`, `avatar`, `coverImage`, `watchHistory`, `password`, `refreshToken`
+- Pre-save hook: password hashed with **bcrypt**
+- Methods: `isPasswordCorrect()`, `generateAccessToken()`, `generateRefreshToken()`
+- Indexes on `username` and `fullName`
+
+### Example Login (simplified)
 
 ```js
-import { User } from "../models/user.models.js";
-
-async function loginController(req, res) {
-  const { email, password } = req.body;
-  const user = await User.findOne({ email });
-  if (!user || !(await user.isPasswordCorrect(password))) {
-    return res.status(401).json({ message: "Invalid credentials" });
-  }
-
-  const accessToken = user.generateAccessToken();
-  const refreshToken = user.generateRefreshToken();
-  user.refreshToken = refreshToken;
-  await user.save({ validateBeforeSave: false });
-
-  res
-    .cookie("refreshToken", refreshToken, {
-      httpOnly: true,
-      secure: true,
-      sameSite: "strict",
-      path: "/",
-    })
-    .json({ accessToken });
+const user = await User.findOne({ email });
+if (!user || !(await user.isPasswordCorrect(password))) {
+  return res.status(401).json({ message: "Invalid credentials" });
 }
+
+const accessToken = user.generateAccessToken();
+const refreshToken = user.generateRefreshToken();
+user.refreshToken = refreshToken;
+await user.save({ validateBeforeSave: false });
+
+res
+  .cookie("refreshToken", refreshToken, {
+    httpOnly: true,
+    secure: true,
+    sameSite: "strict",
+  })
+  .json({ accessToken });
 ```
 
-How to run (quick)
+---
 
-1. Install dependencies:
+## 🛠️ Recent Updates
 
-```powershell
-cd "Professional Backend Setup"
-npm install
-```
+| Component             | Change                                                                                             |
+| --------------------- | -------------------------------------------------------------------------------------------------- |
+| `app.js`              | CORS (env origin), JSON/URL parsing with limits, static assets, cookie-parser, user routes mounted |
+| `index.js`            | Fixed to import configured `app` from `app.js`; server starts after DB connection                  |
+| `user.routes.js`      | Added `POST /register` route; fixed `Router()` typo                                                |
+| `user.controllers.js` | `registerUser` wrapped with `asyncHandler`                                                         |
+| `utils/`              | Added `ApiResponse`, `ApiError`, `asyncHandler` helpers                                            |
+| `user.models.js`      | Full User schema with bcrypt + JWT methods                                                         |
 
-2. Create a `.env` file (or copy `.env.example`) and set your `MONGODB_URI`, `PORT`, and `CORS_ORIGIN`.
+---
 
-3. Start the server:
+## 🚀 Future Improvements
 
-```powershell
-npm run dev
-# or
-node src/index.js
-```
+- [ ] Use `ApiResponse`/`ApiError` consistently in all controllers
+- [ ] Add health-check and metrics endpoints
+- [ ] Implement refresh token rotation & revocation
+- [ ] Production hardening: rate limiting, logging correlation IDs, monitoring
 
-Notes
+---
 
-- This project is focused on learning best practices for backend setup and secure database connectivity. Before using any credentials in a public repository, rotate secrets and remove them from history.
-- The recent changes added middleware and utility helpers to make request handling, errors, and responses more consistent across the app.
-- Further improvements planned:
-  - incorporate `ApiResponse`/`ApiError` consistently in controllers
-  - add health-check and metrics endpoints
-  - implement refresh token rotation & revocation (blacklist or versioning)
-  - production checklist (indexes, rate limiting, logging correlation IDs, monitoring)
+## ⚠️ Security Note
+
+Never commit real secrets. Rotate any credentials that were previously exposed and add `.env` to `.gitignore`.
+
+---
+
+## 📝 Disclaimer
+
+This project is for **learning purposes only**. I am currently in the learning phase of backend development, so please be aware that this code is not from an actual professional backend developer. Feedback and suggestions are always welcome!
